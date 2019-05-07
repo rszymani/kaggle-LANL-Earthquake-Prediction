@@ -17,16 +17,6 @@ import random as rand
 
 import gc
 
-print("Reading data...")
-train_df = pd.read_csv(os.path.join("../input",'train.csv'), dtype={'acoustic_data': np.int16, 'time_to_failure': np.float32})
-
-rows = 150000
-segments = int(np.floor(train_df.shape[0] / rows))
-print("Number of segments: ", segments)
-
-train_X = pd.DataFrame(index=range(segments), dtype=np.float64)
-train_y = pd.DataFrame(index=range(segments), dtype=np.float64, columns=['time_to_failure'])
-
 def add_statistics(seg_id,feat_name,X,xc,ws=""):
     X.loc[seg_id,feat_name + "_mean"+ws] = xc.mean()
     X.loc[seg_id,feat_name + "_var"+ws] = xc.var()
@@ -111,14 +101,6 @@ def create_features(seg_id,seg, X):
         add_quantiles(seg_id,"rollingKurt",X,xc_rolled_skew,ws=ws)
         add_quantiles(seg_id,"rollingSkew",X,xc_rolled_kurt,ws=ws)
 
-for seg_id in range(segments):
-    seg = train_df.iloc[seg_id*rows:seg_id*rows+rows]
-    create_features(seg_id, seg,train_X)
-    train_y.loc[seg_id, 'time_to_failure'] = seg['time_to_failure'].values[-1]
-    if seg_id % 500 == 0:
-        print("iteration {}".format(seg_id))
-
-
 def cross_validate(train_X,train_y,params):
     n_fold = 5
     folds = KFold(n_splits=n_fold, shuffle=True, random_state=42)
@@ -146,17 +128,17 @@ def random_search(train_X,train_y,nr_iterations):
         print("iteration {}/{}".format(it,nr_iterations))
         params = {
             'boosting_type': rand.choice(['gbdt','rf']),
-            'objective': 'regression',
+            'objective': 'MAE',
             'min_data_in_leaf': randint(1,100), 
             'num_leaves': randint(2,100),
-            'max_depth': rand.choice([-1,randint(2,20)]),
-            'learning_rate': rand.uniform(0.0005,0.007),
-            'feature_fraction': rand.uniform(0.5,0.98),
-            'bagging_fraction': rand.uniform(0.5,0.98),
+            'max_depth': rand.choice([-1,randint(2,18)]),
+            'learning_rate': rand.uniform(0.0005,0.02),
+            'feature_fraction': rand.uniform(0.3,0.99),
+            'bagging_fraction': rand.uniform(0.3,0.99),
             'bagging_freq': randint(1,20),
-            'lambda_l1':rand.uniform(0,0.01),
-            'lambda_l2':rand.uniform(0,0.01),
-            'metric':'mae',
+            'lambda_l1':rand.uniform(0,0.07),
+            'lambda_l2':rand.uniform(0,0.07),
+            'metric':'MAE',
             'verbose':-1
         }
         train_score = cross_validate(train_X,train_y,params)
@@ -171,4 +153,25 @@ def random_search(train_X,train_y,nr_iterations):
 
     print("Best score achieved {} for params\n {}".format(best_score,best_params))
 
-random_search(train_X,train_y,2000)
+read_features = True
+if read_features:
+    train_X = pd.read_csv(os.path.join("../extracted_feat/",'train_x_94.csv'))
+    train_y = pd.read_csv(os.path.join("../extracted_feat/",'train_y_9.csv'))
+else:
+    print("Reading data...")
+    train_df = pd.read_csv(os.path.join("../input",'train.csv'), dtype={'acoustic_data': np.int16, 'time_to_failure': np.float32})
+
+    rows = 150000
+    segments = int(np.floor(train_df.shape[0] / rows))
+    print("Number of segments: ", segments)
+
+    train_X = pd.DataFrame(index=range(segments), dtype=np.float64)
+    train_y = pd.DataFrame(index=range(segments), dtype=np.float64, columns=['time_to_failure'])
+    
+    for seg_id in range(segments):
+        seg = train_df.iloc[seg_id*rows:seg_id*rows+rows]
+        create_features(seg_id, seg,train_X)
+        train_y.loc[seg_id, 'time_to_failure'] = seg['time_to_failure'].values[-1]
+        if seg_id % 500 == 0:
+            print("iteration {}".format(seg_id))
+random_search(train_X,train_y,10000)
